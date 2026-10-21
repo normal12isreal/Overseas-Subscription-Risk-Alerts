@@ -1,13 +1,13 @@
 # 外部工具选型与调用示例
 
 核对日期：2026-10-21。用户已确认需要的是 YouTube 视频字幕。
-本页记录候选工具和接口；仅核对项目文档，未安装、未实测、未接入业务，也未发送邮件。以下命令均为以后安装配置后的示例。
+本页保存选型依据和独立命令示例。2026-10-21已按用户新要求安装依赖并实现调用层，真实模型/研究验证及发送边界见 [runtime.md](runtime.md)；下文命令示例不代表每条命令均单独实测。未实际发送邮件或Telegram通知。
 
 源码已按用户要求下载至 `external/`，目录与提交见 [外部项目记录](../external/README.md)。克隆源码不表示已经安装或接入。
 
 ## 1. 建议组合
 
-先采用 Apprise + yt-dlp，覆盖邮件通知、视频搜索和字幕获取。需要直接返回结构化字幕时，再考虑 youtube-transcript-api；不用现在引入三个依赖。
+初选为 Apprise + yt-dlp。当前实现为了直接保留结构化字幕，实际采用 Apprise 发送通知、yt-dlp 搜索、youtube-transcript-api 获取字幕；独立的 yt-dlp 字幕命令仍作为备选保留。
 
 | 能力 | 建议工具 | 配置或输入 | 输出 |
 | --- | --- | --- | --- |
@@ -16,7 +16,7 @@
 | 链接取字幕 | yt-dlp | 视频 URL、所需语言 | 已有人工或自动字幕文件 |
 | 结构化字幕备选 | [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api) | 视频 ID、语言优先级 | text/start/duration 字幕片段 |
 
-这些是现成底层工具。项目仍需少量调用代码来整理输入、结果和错误；当前尚未编写。
+底层工具的输入、输出和错误已在 `risk_monitor/research.py` 与 `risk_monitor/delivery.py` 适配。Telegram 已配置在本地 `.env`，实际发送仍需显式启用。
 
 ## 2. 邮件通知：Apprise
 
@@ -92,4 +92,4 @@ notification.send_email(configured_recipient, subject, body, dedupe_key) -> Send
 
 这些底层工具负责操作；研究方向、摘要提炼、紧急程度判断与三路汇总仍由工作流负责。邮件通知工具也不包含读取邮箱的功能；收件箱读取另选接口。
 
-下一次用户明确要求搭建时，再确定邮箱提供方、配置目录及运行环境，完成安装与最小调用验证。
+后半段已实现；Gmail收件箱读取及邮件风险识别仍按用户要求暂缓。

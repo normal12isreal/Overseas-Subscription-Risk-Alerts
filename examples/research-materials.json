@@ -1,0 +1,17 @@
+{
+  "background": [{
+    "source": {"source_id": "fixture-giffgaff-inactivity", "title": "giffgaff 停用原因说明（2026-10-21人工整理演示摘要）", "url": "https://help.giffgaff.com/en/articles/242797-understanding-why-your-number-has-been-deactivated"},
+    "status": "success", "text": "演示资料：官方帮助将长期未使用列为SIM停用原因之一。需区分SIM停用、号码回收和账户本身状态；模拟通知中的两个月是本例时间设定，不是官方停用周期。",
+    "note": "人工整理的固定资料，不是视频或实际抓取字幕；实时政策需重新核实。"
+  }],
+  "appeal": [{
+    "source": {"source_id": "fixture-giffgaff-support", "title": "giffgaff 账号服务受限说明（演示摘要）", "url": "https://help.giffgaff.com/en/articles/571271-what-to-do-if-your-giffgaff-account-has-been-disabled"},
+    "status": "success", "text": "演示资料：安全检查、支付和使用情况审查可能导致服务受限；先确认实际原因，再联系官方支持核查。不同原因的处理方式不能混用，也不能保证恢复。",
+    "note": "固定演示资料，非该用户真实账号诊断或字幕。"
+  }],
+  "response": [{
+    "source": {"source_id": "fixture-giffgaff-number", "title": "giffgaff 携号转出帮助（演示摘要）", "url": "https://help.giffgaff.com/en/articles/635745-getting-a-pac-or-stac-to-leave-giffgaff"},
+    "status": "success", "text": "演示资料：需要保留号码时，应核实官方携号转出要求和适用时间；避免在未核实的情况下主动关闭号码。本流程仅提供方案，不执行购买、申诉或账户操作。",
+    "note": "固定演示摘要，具体条件以届时官方说明为准。"
+  }]
+}
