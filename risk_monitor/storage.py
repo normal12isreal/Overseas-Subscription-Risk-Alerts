@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 
 from .domain import Delivery, IncidentSeed, Solution, parse_time
+from .mail import MailMessage
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -38,7 +39,18 @@ class Store:
                     delivery_key TEXT PRIMARY KEY, receipt_json TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS runs (
                     run_key TEXT PRIMARY KEY, report_json TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS mail_messages (
+                    mailbox TEXT NOT NULL, message_id TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL, received_at TEXT NOT NULL,
+                    queued_at TEXT NOT NULL, status TEXT NOT NULL,
+                    payload_json TEXT NOT NULL, event_ids_json TEXT NOT NULL,
+                    PRIMARY KEY (mailbox, message_id));
+                CREATE INDEX IF NOT EXISTS mail_content_lookup
+                    ON mail_messages(mailbox, fingerprint);
             """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(mail_messages)")}
+            if "last_attempt_at" not in columns:
+                db.execute("ALTER TABLE mail_messages ADD COLUMN last_attempt_at TEXT")
 
     @contextmanager
     def connect(self):
@@ -62,6 +74,65 @@ class Store:
     def incidents(self) -> list[dict]:
         with self.connect() as db:
             return [dict(row) for row in db.execute("SELECT * FROM incidents ORDER BY detected_at, event_id")]
+
+    def mail_known(self, mailbox: str, message_id: str) -> bool:
+        with self.connect() as db:
+            return db.execute("SELECT 1 FROM mail_messages WHERE mailbox=? AND message_id=?",
+                              (mailbox, message_id)).fetchone() is not None
+
+    def queue_mail(self, message: MailMessage, now: datetime) -> bool:
+        # Clipped bodies cannot prove two distinct messages are identical.
+        fingerprint = message.fingerprint + (":" + message.message_id if message.truncated else "")
+        with self.connect() as db:
+            if db.execute("SELECT 1 FROM mail_messages WHERE mailbox=? AND message_id=?",
+                          (message.mailbox, message.message_id)).fetchone():
+                return False
+            duplicate = db.execute("SELECT 1 FROM mail_messages WHERE mailbox=? AND fingerprint=?",
+                                   (message.mailbox, fingerprint)).fetchone() is not None
+            db.execute("INSERT INTO mail_messages (mailbox, message_id, fingerprint, received_at, "
+                       "queued_at, status, payload_json, event_ids_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       (message.mailbox, message.message_id, fingerprint, message.received_at.isoformat(),
+                        now.isoformat(), "duplicate" if duplicate else "pending",
+                        "{}" if duplicate else message.model_dump_json(), "[]"))
+            return not duplicate
+
+    def skip_mail(self, mailbox: str, message_id: str, received_at: datetime, now: datetime):
+        with self.connect() as db:
+            db.execute("INSERT OR IGNORE INTO mail_messages (mailbox, message_id, fingerprint, received_at, "
+                       "queued_at, status, payload_json, event_ids_json) VALUES (?, ?, ?, ?, ?, 'skipped', '{}', '[]')",
+                       (mailbox, message_id, "skipped:" + message_id, received_at.isoformat(), now.isoformat()))
+
+    def pending_mail(self, limit: int) -> list[MailMessage]:
+        with self.connect() as db:
+            return [MailMessage.model_validate_json(row[0]) for row in db.execute(
+                "SELECT payload_json FROM mail_messages WHERE status='pending' "
+                "ORDER BY last_attempt_at IS NOT NULL, last_attempt_at, queued_at, message_id LIMIT ?",
+                (limit,))]
+
+    def mail_attempted(self, message: MailMessage, now: datetime):
+        with self.connect() as db:
+            db.execute("UPDATE mail_messages SET last_attempt_at=? WHERE mailbox=? AND message_id=?",
+                       (now.isoformat(), message.mailbox, message.message_id))
+
+    def mail_counts(self) -> dict:
+        with self.connect() as db:
+            return {row[0]: row[1] for row in db.execute("SELECT status, COUNT(*) FROM mail_messages GROUP BY status")}
+
+    def complete_mail(self, message: MailMessage, seeds: list[IncidentSeed], now: datetime, hours: float):
+        # Register ALL candidates and mark their source processed in one commit.
+        # A crash cannot leave a processed email with only some events recorded.
+        with self.connect() as db:
+            row = db.execute("SELECT status FROM mail_messages WHERE mailbox=? AND message_id=?",
+                             (message.mailbox, message.message_id)).fetchone()
+            if not row or row[0] != "pending":
+                raise ValueError("Mail must be queued and pending before registration")
+            for seed in seeds:
+                db.execute("INSERT OR IGNORE INTO incidents VALUES (?, ?, ?, ?, 0, 0)",
+                           (seed.event_id, seed.model_dump_json(), now.isoformat(),
+                            (now + timedelta(hours=hours)).isoformat()))
+            db.execute("UPDATE mail_messages SET status='processed', payload_json='{}', event_ids_json=? "
+                       "WHERE mailbox=? AND message_id=? AND status='pending'",
+                       (json.dumps([s.event_id for s in seeds]), message.mailbox, message.message_id))
 
     def due_refreshes(self, now: datetime) -> list[dict]:
         return [row for row in self.incidents()

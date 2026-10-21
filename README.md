@@ -1,6 +1,6 @@
 # 邮箱服务风险监测与应对助手
 
-已经实现从“已识别风险事件批次”开始的后半段 LangGraph 工作流。邮件读取、垃圾邮件过滤和邮件风险识别尚未实现；Gmail OAuth 文件未使用。
+已经实现 Gmail 读取、邮件风险识别和后续完整 LangGraph 工作流。每轮读取最近两小时的邮件；一封邮件可拆出多个独立事件，每个事件分别进行三路研究和提醒。
 
 ## 接续入口
 
@@ -24,13 +24,20 @@
 - 千问兼容接口默认使用 `qwen-flash`；搜索使用 yt-dlp，字幕使用 youtube-transcript-api，通知使用 Apprise。
 - 待办默认写入 `C:\Users\35271\Desktop\tryy`；通知默认暂存到 `data/outbox/`，`--notify` 才实际发送。
 - 三个示例均为虚构 giffgaff 号码，模拟通知称将在2026-12-21停用，即相对2026-10-21两个月后；不代表官方政策或真实账号状态。
-- 当前验证结果与限制见 [实现记录](docs/runtime.md)。未读取邮箱、未启动后台定时器。
+- Gmail 只读 OAuth 已完成，并实际读取最近两小时的2封邮件，千问判断均无风险；重复轮询跳过这2封邮件，没有再次调用模型。虚构多账号邮件经真实千问识别出3个独立风险。
+- 已有邮件读取、去重、识别、独立研究、待办与通知流程的31项本地测试。当前验证结果与限制见 [实现记录](docs/runtime.md)。未启动后台定时器。
 
 ## 运行
 
 在项目根目录使用 PowerShell，无需激活环境：
 
 ```powershell
+# 首次或授权失效时：浏览器登录，允许 Gmail 只读权限
+.\.venv\Scripts\python.exe -m risk_monitor auth
+
+# 读取最近两小时邮件、识别风险、处理事件，同时检查两条到期机制
+.\.venv\Scripts\python.exe -m risk_monitor poll
+
 # 模拟事件 + 真实千问 + 真实 YouTube，默认不向外发通知
 .\.venv\Scripts\python.exe -m risk_monitor run
 
@@ -43,7 +50,7 @@
 # 显式启用实际通知；接收人从配置读取
 .\.venv\Scripts\python.exe -m risk_monitor tick --notify
 
-# 每小时执行一轮，前台运行，Ctrl+C停止；当前未替用户启动
+# 每小时读最近两小时邮件并检查提醒，前台运行，Ctrl+C停止
 .\.venv\Scripts\python.exe -m risk_monitor watch --interval 3600
 ```
 
@@ -61,14 +68,16 @@
 
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m risk_monitor graph
+.\.venv\Scripts\python.exe -m risk_monitor graph --view inbox
 ```
 
 `demo` 是确定性模拟模型，`fixture` 是人工整理演示摘要，明确不是实际字幕。不同验证模式使用不同 `--data-dir`，避免将已缓存的演示结果当成新一轮真实研究。
 
 ## 配置与环境
 
-- `settings.toml`：目录、并发、时间阈值、每路最多5个视频、超时和模型调用预算。
-- `.env`：本地模型地址、Key、Telegram Token 和 Chat ID，已忽略，不进入 Git。
+- `settings.toml`：目录、并发、时间阈值、每路最多5个视频、邮件数量/正文上限、超时和模型调用预算。
+- `.env`：本地模型地址、Key、Telegram Token、Chat ID，以及 Gmail OAuth 文件路径，已忽略，不进入 Git。
+- `data/gmail-token.json`：首次授权后保存的账户凭证，已忽略；可自动刷新，撤销或失效后重新运行 auth。
 - `.env.example`：可提交的字段模板。
 - `requirements.lock.txt`：本次验证环境的依赖版本。
 
@@ -78,3 +87,5 @@
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
 ```
+
+`poll/watch` 只使用真实时钟和真实千问识别，不接受模拟时间或 demo 模型。默认最多读取10封未处理邮件、每封正文12000字符；达到上限时输出 `has_more=true`，后续轮询继续跳过已处理邮件。大量邮件时应增加 `gmail_max_messages`、适当增加模型预算或缩短轮询间隔。停机超过两小时不会补读更早的邮箱邮件；此前已缓存但识别失败的邮件仍会重试。

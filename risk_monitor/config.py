@@ -29,6 +29,10 @@ class Settings(BaseModel):
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
     apprise_config: Path | None = None
+    gmail_credentials_file: Path | None = None
+    gmail_token_file: Path = Path("data/gmail-token.json")
+    gmail_max_messages: int = Field(default=10, ge=1, le=100)
+    mail_max_characters: int = Field(default=12000, ge=1000, le=16000)
 
     @classmethod
     def load(cls, path: Path) -> "Settings":
@@ -37,12 +41,14 @@ class Settings(BaseModel):
         with path.open("rb") as handle:
             values = tomllib.load(handle)
         for field in ("llm_base_url", "llm_api_key", "llm_model",
-                      "telegram_bot_token", "telegram_chat_id", "apprise_config"):
+                      "telegram_bot_token", "telegram_chat_id", "apprise_config",
+                      "gmail_credentials_file", "gmail_token_file"):
             value = os.getenv(field.upper())
             if value:
                 values[field] = value
         settings = cls.model_validate(values)
-        for field in ("todo_directory", "data_directory", "apprise_config"):
+        for field in ("todo_directory", "data_directory", "apprise_config",
+                      "gmail_credentials_file", "gmail_token_file"):
             value = getattr(settings, field)
             if value is not None and not value.is_absolute():
                 setattr(settings, field, (path.parent / value).resolve())

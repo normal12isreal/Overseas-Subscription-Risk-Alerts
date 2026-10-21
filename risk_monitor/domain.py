@@ -21,7 +21,7 @@ class IncidentSeed(Model):
     service: str = Field(min_length=1, max_length=100)
     account_ref: str = Field(min_length=1, max_length=150)
     notice: str = Field(min_length=1, max_length=20000)
-    service_status: Literal["scheduled_deactivation", "suspended", "verification_required"]
+    service_status: Literal["scheduled_deactivation", "suspended", "cancelled", "verification_required"]
     effective_at: AwareDatetime | None = None
     simulated: bool = True
 

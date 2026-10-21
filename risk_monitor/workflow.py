@@ -148,9 +148,9 @@ class Workflow:
         # Provenance belongs to acquired evidence, not to model-generated identifiers.
         solution = Solution(**content.model_dump(), source_ids=list(sources))
         # Deadline/state guard is deterministic; LLM cannot downgrade an immediate stop.
-        if seed.service_status == "suspended" or (seed.effective_at and seed.effective_at <= state["now"] + timedelta(hours=24)):
+        if seed.service_status in {"suspended", "cancelled"} or (seed.effective_at and seed.effective_at <= state["now"] + timedelta(hours=24)):
             solution.priority = "urgent"
-            solution.reasons = ["输入已停用或距截止不超过24小时，按保守规则升级", *solution.reasons][:8]
+            solution.reasons = ["输入已停用/取消或距截止不超过24小时，按保守规则升级", *solution.reasons][:8]
         if any(b.status != "success" for b in state["briefs"]):
             solution.limitations = ["研究证据不完整；方案包含待人工核实项", *solution.limitations][:10]
         if seed.simulated:
