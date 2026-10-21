@@ -1,0 +1,4 @@
+# Upstream source checkouts; provenance is tracked in external/README.md.
+/external/apprise/
+/external/yt-dlp/
+/external/youtube-transcript-api/
