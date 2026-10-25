@@ -2,6 +2,12 @@
 
 记录日期：2026-10-21。Gmail 邮件读取、过滤与风险识别已经实现；真实入口是 poll / watch，run 保留已识别事件列表的学习入口。
 
+## 可复用配置
+
+安装、配置字段和运行命令以 README.md 为入口。模型地址/Key/模型名、Telegram Token/Chat ID、Gmail OAuth 路径统一从本地 `.env` 读取；模板为 `.env.example`。Gmail 授权令牌由 auth 自动保存，不需要写入模板。额外 Apprise 凭据文件放在忽略的 `credentials/`。
+
+公共 `settings.toml` 的待办目录使用相对路径 `todos/`，个人位置可用 `.env` 的 `TODO_DIRECTORY` 覆盖；已有终端环境变量优先于 `.env`，命令行 `--todo-dir` 优先于两者。目录均在加载配置时相对于 settings.toml 解析；命令行目录相对于当前终端目录。下文的个人桌面路径和实发记录属于历史验证，不是新用户默认配置。
+
 ## 邮件读取与风险识别
 
 `gmail.py` 使用 Google 官方 OAuth 库取得桌面应用只读凭证，再调用 Gmail REST API。首次运行 auth 打开系统浏览器，用户完成登录及权限确认；凭证存入忽略的 `data/gmail-token.json`，支持刷新。OAuth 凭据与账户授权是两回事；auth 还实际调用 profile 验证 API 权限。个人测试应用需要在 Google Cloud 的 Audience / 测试用户中加入登录邮箱；未加入时会收到403 access_denied。

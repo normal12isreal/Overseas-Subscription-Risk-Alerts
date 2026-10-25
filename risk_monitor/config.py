@@ -40,7 +40,7 @@ class Settings(BaseModel):
         load_dotenv(path.parent / ".env", override=False)
         with path.open("rb") as handle:
             values = tomllib.load(handle)
-        for field in ("llm_base_url", "llm_api_key", "llm_model",
+        for field in ("todo_directory", "llm_base_url", "llm_api_key", "llm_model",
                       "telegram_bot_token", "telegram_chat_id", "apprise_config",
                       "gmail_credentials_file", "gmail_token_file"):
             value = os.getenv(field.upper())

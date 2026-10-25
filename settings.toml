@@ -1,4 +1,5 @@
-todo_directory = 'C:\Users\35271\Desktop\tryy'
+# Relative to this file; override locally with TODO_DIRECTORY in .env.
+todo_directory = "todos"
 data_directory = "data"
 escalation_hours = 3
 refresh_hours = 24
