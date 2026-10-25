@@ -3,9 +3,28 @@ import json
 from pathlib import Path
 import re
 import sys
+from time import monotonic
 
 from .config import Settings
-from .domain import Collected, Material, ResearchTask, Source
+from .domain import Collected, Material, Purpose, ResearchPlan, ResearchTask, Source
+
+
+def simple_research_plan(service: str, service_status: str, notice: str) -> ResearchPlan:
+    """Object + actual issue, then exactly the two user-defined suffixes."""
+    issue = {"scheduled_deactivation": "停用", "suspended": "暂停",
+             "cancelled": "取消", "verification_required": "身份认证"}[service_status]
+    if service_status in {"scheduled_deactivation", "suspended"}:
+        if re.search(r"封号|封禁|\bban(?:ned)?\b", notice, re.IGNORECASE):
+            issue = "封号"
+        elif re.search(r"暂停|suspend", notice, re.IGNORECASE):
+            issue = "暂停"
+    object_name = " 银行卡" if re.search(r"银行卡|\b(?:bank|debit|credit)\s+card\b", notice, re.IGNORECASE) else ""
+    base = service.strip() + object_name + " " + issue
+    directions = [(Purpose.BACKGROUND, "", "了解该问题"),
+                  (Purpose.APPEAL, " 申诉", "查找申诉方法"),
+                  (Purpose.RESPONSE, " 应对处理方式", "查找应对处理方式")]
+    return ResearchPlan(tasks=[ResearchTask(purpose=p, query=base + suffix, goal=goal)
+                               for p, suffix, goal in directions])
 
 
 async def json_process(args: list[str], timeout: float) -> dict:
@@ -61,17 +80,35 @@ class YouTubeResearch:
         return result[:self.settings.max_videos]
 
     async def transcript(self, source: Source) -> Material:
-        try:
-            value = await json_process([
-                sys.executable, "-m", "risk_monitor.transcript_worker", source.video_id,
+        deadline = monotonic() + self.settings.tool_timeout_seconds
+        args = [sys.executable, "-m", "risk_monitor.transcript_worker", source.video_id,
                 "--limit", str(self.settings.transcript_max_characters),
-                "--languages", *self.settings.languages,
-            ], self.settings.tool_timeout_seconds)
-            return Material(source=source, **value)
+                "--languages", *self.settings.languages]
+        try:
+            # Reserve part of the existing per-video budget for description fallback.
+            value = await json_process(args, min(12, self.settings.tool_timeout_seconds / 2))
+            result = Material(source=source, **value)
+            if result.status == "success" and (result.text or result.segments):
+                return result
         except TimeoutError:
-            return Material(source=source, status="timed_out", note="字幕请求超时")
+            result = Material(source=source, status="timed_out", note="转写文稿请求超时")
         except Exception as exc:
-            return Material(source=source, status="failed", note=type(exc).__name__)
+            result = Material(source=source, status="failed", note=type(exc).__name__)
+        transcript_note = result.note
+        try:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise TimeoutError
+            value = await json_process([*args, "--description-only"], remaining)
+            fallback = Material(source=source, **value)
+            fallback.note = f"转写文稿未取得：{transcript_note}；{fallback.note}"
+            return fallback
+        except TimeoutError:
+            return Material(source=source, status="timed_out",
+                            note=f"转写文稿未取得：{transcript_note}；视频简介请求超时")
+        except Exception as exc:
+            return Material(source=source, status="failed",
+                            note=f"转写文稿未取得：{transcript_note}；视频简介请求失败：{type(exc).__name__}")
 
     async def collect(self, task: ResearchTask) -> Collected:
         sources = await self.search(task.query)
@@ -89,4 +126,4 @@ class YouTubeResearch:
             status = "empty"
         return Collected(purpose=task.purpose, query=task.query,
                          status=status,
-                         materials=materials, note="字幕缺失与失败会逐项保留；不下载视频或音频")
+                         materials=materials, note="优先转写文稿，失败时读取作者简介；资料类型与失败原因逐项保留；不下载视频或音频")

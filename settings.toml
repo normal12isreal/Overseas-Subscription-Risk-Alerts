@@ -10,8 +10,9 @@ tool_timeout_seconds = 25
 llm_timeout_seconds = 40
 llm_max_output_tokens = 1400
 llm_max_calls = 30
-transcript_max_characters = 12000
-languages = ["en", "zh-Hans", "zh-Hant"]
+# Per-video limit: all available transcripts from the first five results enter distillation.
+transcript_max_characters = 50000
+languages = ["zh", "zh-Hans", "zh-Hant", "en"]
 gmail_max_messages = 10
 mail_max_characters = 12000
 # Each Gmail poll always covers the preceding two hours; overlapping mail is deduped.
