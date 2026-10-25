@@ -72,6 +72,8 @@ class Segment(Model):
 class Material(Model):
     source: Source
     status: Literal["success", "unavailable", "failed", "timed_out"]
+    content_kind: Literal["transcript", "description", "unknown"] = "unknown"
+    language_code: str | None = None
     segments: list[Segment] = Field(default_factory=list)
     text: str = ""
     note: str = ""

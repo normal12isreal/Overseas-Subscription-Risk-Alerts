@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta, timezone
 from hashlib import sha256
 import logging
 from pathlib import Path
@@ -9,19 +10,28 @@ from .storage import Store, write_json
 
 
 def render(seed: IncidentSeed, solution: Solution, briefs: list[BranchBrief], event_id: str) -> str:
-    lines = [f"# {seed.service} 服务风险事项", "", f"事件：{event_id}",
-             f"账号标识：{seed.account_ref}", f"优先级：{solution.priority}",
-             f"模拟事件：{'是（不是实际账号告警）' if seed.simulated else '否'}",
-             f"输入的停用/核验时间：{seed.effective_at.isoformat() if seed.effective_at else '未知'}",
-             "", "## 方案", solution.summary, "", "## 建议动作"]
-    lines.extend(f"- {action}" for action in solution.actions)
-    lines.extend(["", "## 判断依据", *[f"- {reason}" for reason in solution.reasons],
-                  "", "## 限制", *[f"- {item}" for item in solution.limitations],
-                  "", "## 三路研究"])
+    # Human delivery is a brief; the full diagnostics remain in the JSON report.
+    title = f"{seed.service} 服务风险提醒"
+    if seed.simulated:
+        title = "【模拟测试，非真实账号告警】" + title
+    lines = [title, f"账号：{seed.account_ref}｜{'紧急' if solution.priority == 'urgent' else '普通'}"]
+    if seed.effective_at:
+        local_time = seed.effective_at.astimezone(timezone(timedelta(hours=8)))
+        lines.append(f"停用/核验时间：{local_time:%Y-%m-%d %H:%M}（北京时间）")
+    lines.extend(["", "情况：" + solution.summary, "", "建议处理："])
+    actions = list(dict.fromkeys(a.strip() for a in solution.actions if a.strip()))[:3]
+    lines.extend(f"{i}. {action}" for i, action in enumerate(actions, 1))
+    sources = {}
     for brief in briefs:
-        lines.extend([f"### {brief.purpose.value} / {brief.status}", brief.content.summary])
-        lines.extend(f"- 限制：{item}" for item in brief.content.limitations)
-        lines.extend(f"- [{source.title}]({source.url})" for source in brief.sources)
+        if brief.status == "success":
+            for source in brief.sources:
+                if source.source_id in solution.source_ids:
+                    sources.setdefault(source.url, source)
+    if sources:
+        lines.extend(["", "参考来源："])
+        lines.extend(f"- {source.title}：{source.url}" for source in list(sources.values())[:2])
+    elif briefs:
+        lines.extend(["", "尚未取得可引用的相关资料，请从官方账号页面或客服核实。"])
     return "\n".join(lines) + "\n"
 
 

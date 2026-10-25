@@ -1,7 +1,7 @@
 """One isolated event graph per incident, plus dynamic batch fan-out."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 import operator
 from pathlib import Path
 import re
@@ -15,6 +15,8 @@ from .delivery import Notifier, create_todo, inspect_todo, render
 from .domain import (BranchBrief, BriefContent, Collected, EventFacts, IncidentSeed,
                      Purpose, ResearchPlan, Solution, SolutionContent, parse_time)
 from .storage import Store
+from .risk_policy import risk_context
+from .research import simple_research_plan
 
 
 class EventState(TypedDict, total=False):
@@ -61,14 +63,14 @@ class Workflow:
         self.tick_graph = self.build_tick_graph()
 
     async def extract_event(self, state: EventState):
-        facts = await self.model.generate(EventFacts, "extract", {"seed": state["seed"].model_dump(mode="json")})
+        facts = await self.model.generate(EventFacts, "extract", {
+            "seed": state["seed"].model_dump(mode="json"),
+            "business_context": risk_context(state["seed"], state["now"])})
         return {"facts": facts, "trace": ["extract_event"]}
 
     async def plan_research(self, state: EventState):
         seed = state["seed"]
-        plan = await self.model.generate(ResearchPlan, "plan", {
-            "seed": seed.model_dump(mode="json"), "facts": state["facts"].model_dump(),
-            "run_kind": state["run_kind"], "as_of": state["now"].isoformat()})
+        plan = simple_research_plan(seed.service, seed.service_status, seed.notice)
         for task in plan.tasks:
             if seed.service.casefold() not in task.query.casefold():
                 raise ValueError("Research query must include the service")
@@ -98,29 +100,35 @@ class Workflow:
             success = [m for m in materials.materials if m.status == "success" and (m.text or m.segments)]
             if materials.status != "success" or not success:
                 brief = brief_error(purpose, materials.query, materials.status if materials.status != "success" else "empty",
-                                    materials.note or "没有可用字幕", [m.source for m in materials.materials])
+                                    materials.note or "没有可用转写文稿或视频简介", [m.source for m in materials.materials])
             else:
                 try:
-                    # Every material includes source metadata and timestamps, within a bounded budget.
+                    # The worker bounds each video separately; include every acquired transcript.
                     payload = []
-                    budget = self.settings.transcript_max_characters
                     for item in success:
                         text = item.text or "\n".join(f"[{s.start:.1f}s] {s.text}" for s in item.segments)
                         if item.segments:
                             text = "\n".join(f"[{s.start:.1f}s] {s.text}" for s in item.segments)
-                        if budget <= 0:
-                            break
-                        payload.append({"source": item.source.model_dump(), "text": text[:budget], "note": item.note})
-                        budget -= len(text[:budget])
+                        payload.append({"source": item.source.model_dump(), "text": text, "note": item.note,
+                                        "content_kind": item.content_kind, "language_code": item.language_code})
                     content = await self.model.generate(BriefContent, "distill", {
-                        "purpose": purpose.value, "query": materials.query, "materials": payload})
+                        "purpose": purpose.value, "query": materials.query, "materials": payload,
+                        "goal": next(t.goal for t in state["plan"].tasks if t.purpose == purpose),
+                        "incident": {"service": state["seed"].service,
+                                     "service_status": state["seed"].service_status,
+                                     "notice": state["seed"].notice[:4000]},
+                        "facts": state["facts"].model_dump(),
+                        "business_context": risk_context(state["seed"], state["now"])})
                     allowed = {m["source"]["source_id"] for m in payload}
                     if not set(content.source_ids) <= allowed:
                         raise ValueError("Summary cited an unknown source")
                     if len(success) < len(materials.materials):
-                        content.limitations = ["部分候选视频没有取得字幕，未据此推断事实", *content.limitations][:10]
-                    brief = BranchBrief(purpose=purpose, query=materials.query, status="success", content=content,
-                                        sources=[m.source for m in success if m.source.source_id in allowed])
+                        content.limitations = ["部分候选视频没有取得正文资料，未据此推断事实", *content.limitations][:10]
+                    if not content.source_ids:
+                        brief = brief_error(purpose, materials.query, "empty", "取得资料但没有与当前事件相关的支持资料")
+                    else:
+                        brief = BranchBrief(purpose=purpose, query=materials.query, status="success", content=content,
+                                            sources=[m.source for m in success if m.source.source_id in content.source_ids])
                 except Exception as exc:
                     brief = brief_error(purpose, materials.query, "failed", "提炼失败：" + type(exc).__name__,
                                         [m.source for m in success])
@@ -134,6 +142,7 @@ class Workflow:
 
     async def compose_solution(self, state: EventState):
         seed = state["seed"]
+        context = risk_context(seed, state["now"])
         sources = {s.source_id: s for b in state["briefs"] if b.status == "success" for s in b.sources}
         evidence = []
         for brief in state["briefs"]:
@@ -144,13 +153,14 @@ class Workflow:
         content = await self.model.generate(SolutionContent, "compose", {
             "seed": seed.model_dump(mode="json"), "facts": state["facts"].model_dump(),
             "briefs": evidence,
-            "sources": [s.model_dump() for s in sources.values()], "as_of": state["now"].isoformat()})
+            "sources": [s.model_dump() for s in sources.values()], "as_of": state["now"].isoformat(),
+            "business_context": context})
         # Provenance belongs to acquired evidence, not to model-generated identifiers.
         solution = Solution(**content.model_dump(), source_ids=list(sources))
         # Deadline/state guard is deterministic; LLM cannot downgrade an immediate stop.
-        if seed.service_status in {"suspended", "cancelled"} or (seed.effective_at and seed.effective_at <= state["now"] + timedelta(hours=24)):
+        if context["force_urgent"]:
             solution.priority = "urgent"
-            solution.reasons = ["输入已停用/取消或距截止不超过24小时，按保守规则升级", *solution.reasons][:8]
+            solution.reasons = ["已停用/取消、截止已过或距离停用/核验截止不超过七天，按业务规则判为紧急", *solution.reasons][:8]
         if any(b.status != "success" for b in state["briefs"]):
             solution.limitations = ["研究证据不完整；方案包含待人工核实项", *solution.limitations][:10]
         if seed.simulated:
@@ -179,6 +189,7 @@ class Workflow:
                   "run_kind": state["run_kind"], "as_of": state["now"].isoformat(),
                   "status": "completed" if completed else "awaiting_delivery",
                   "seed": state["seed"].model_dump(mode="json"), "facts": state["facts"].model_dump(),
+                  "business_context": risk_context(state["seed"], state["now"]),
                   "plan": state["plan"].model_dump(), "collected": [c.model_dump() for c in state["collected"]],
                   "briefs": [b.model_dump() for b in state["briefs"]], "solution": state["solution"].model_dump(),
                   "delivery": state["delivery"], "trace": [*state["trace"], "record_result"]}
