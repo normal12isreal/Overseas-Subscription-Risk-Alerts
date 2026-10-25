@@ -1,0 +1,14 @@
+[
+  {
+    "name": "three_accounts_in_one_email",
+    "subject": "SIMULATED giffgaff account notices",
+    "body": "This is fictional test data. giffgaff SIM demo-A will be deactivated on 21 December 2026 at 12:00 UTC unless activity is recorded. giffgaff SIM demo-B has been suspended today. giffgaff SIM demo-C requires identity verification to continue service. These are three separate accounts.",
+    "expected_accounts": ["demo-A", "demo-B", "demo-C"]
+  },
+  {
+    "name": "marketing_is_not_a_risk",
+    "subject": "SIMULATED weekly offers",
+    "body": "Learn what account suspension means in our general help article. Your service is active and no action is required. Enjoy this week's offers.",
+    "expected_accounts": []
+  }
+]

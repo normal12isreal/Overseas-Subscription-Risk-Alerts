@@ -1,0 +1,29 @@
+[
+  {
+    "source_ref": "demo-notice-giffgaff-A-20261021",
+    "service": "giffgaff",
+    "account_ref": "demo-sim-A",
+    "notice": "【模拟通知，非真实邮件】号码A预计将在2026年12月21日因长期未使用而停用，距示例日期两个月。请核实当前号码状态及避免停用的办法。本段不是giffgaff官方通知或政策。",
+    "service_status": "scheduled_deactivation",
+    "effective_at": "2026-12-21T12:00:00+08:00",
+    "simulated": true
+  },
+  {
+    "source_ref": "demo-notice-giffgaff-B-20261021",
+    "service": "giffgaff",
+    "account_ref": "demo-sim-B",
+    "notice": "【模拟通知，非真实邮件】号码B预计2026年12月21日被停用。这个号码与号码A分开登记、研究、提醒，即使两条通知在同一轮检查中出现，也不能合并为一个事件。",
+    "service_status": "scheduled_deactivation",
+    "effective_at": "2026-12-21T12:00:00+08:00",
+    "simulated": true
+  },
+  {
+    "source_ref": "demo-notice-giffgaff-C-20261021",
+    "service": "giffgaff",
+    "account_ref": "demo-sim-C",
+    "notice": "【模拟通知，非真实邮件】号码C同样预计在两个月后的2026年12月21日停用。需要独立核实保号要求、官方支持渠道和替代方案，不能把其他号码的处理结果当成本号码已解决。",
+    "service_status": "scheduled_deactivation",
+    "effective_at": "2026-12-21T12:00:00+08:00",
+    "simulated": true
+  }
+]

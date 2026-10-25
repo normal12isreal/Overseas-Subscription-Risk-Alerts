@@ -1,0 +1,20 @@
+todo_directory = 'C:\Users\35271\Desktop\tryy'
+data_directory = "data"
+escalation_hours = 3
+refresh_hours = 24
+max_parallel_events = 2
+max_parallel_branches = 3
+max_videos = 5
+branch_timeout_seconds = 90
+tool_timeout_seconds = 25
+llm_timeout_seconds = 40
+llm_max_output_tokens = 1400
+llm_max_calls = 30
+# Per-video limit: all available transcripts from the first five results enter distillation.
+transcript_max_characters = 50000
+languages = ["zh", "zh-Hans", "zh-Hant", "en"]
+gmail_max_messages = 10
+mail_max_characters = 12000
+# Each Gmail poll always covers the preceding two hours; overlapping mail is deduped.
+# OAuth paths are configured locally in .env; tokens never enter Git.
+# First mandatory refresh only. No automatic record cleanup or daily repetition.
